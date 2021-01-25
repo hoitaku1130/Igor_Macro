@@ -3056,8 +3056,13 @@ end
 //	String gname = WinName(0,1)
 	MPF2_DoPeakResults(GetSetNumberFromWinName(graphStr))
 	String MPF2_ResultsPanelName = "MPF2_ResultsPanel"+"_"+num2str(setNumber)
-	Dowindow /K  $(MPF2_ResultsPanelName)
+	Dowindow /K  $(MPF2_ResultsPanelName)		//Close Panel
 	//Killwindow /Z $("Multipeak Fit 2 Results")
+	controlinfo /W=$("New_AutoFit_Panel") $("NAF_autoFit_CloseWindow")
+	variable need_to_close = V_Value
+	if(need_to_close)
+		killwindow $(graphStr)
+	endif 
 End
 
  
@@ -3631,7 +3636,7 @@ static Function core_new_autofit_function__()
 	if(wintype(panel_name) != 0)
 		DoWindow /F $(panel_name)
 	else
-		NewPanel /W=(50,50,240,700) /K=1 as panel_name
+		NewPanel /W=(50,50,240,720) /K=1 as panel_name
 		RenameWindow $S_name, $(panel_name)
 		DFREF saved_dfr = getdatafolderDFR()
 		setDatafolder Get_New_AutoFit_DataFolder()
@@ -3690,6 +3695,8 @@ static Function core_new_autofit_function__()
 		checkbox NS_autoFit_checkbox_width_8 pos={10,420+8*space},title="7   gauss for width"
 		checkbox NS_autoFit_checkbox_width_9 pos={10,420+9*space},title="8   gauss for width"
 		checkbox NS_autoFit_checkbox_width_10 pos={10,420+10*space},title="9   gauss for width"
+		
+		checkbox NAF_autoFit_CloseWindow pos={27,420+11*space},title="Close Fitting Window?"
 	endif
 End
 
