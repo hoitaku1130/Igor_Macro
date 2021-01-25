@@ -1,6 +1,8 @@
 #pragma rtGlobals=3	// Use modern global access method and strict wave access.
 #include <WaveSelectorWidget>
 #include <PopupWaveSelector>
+#include <Multi-peak Fitting 2.0>
+#include <HierarchicalListWidget>
 
 #if (IgorVersion() < 7) 
 	Menu "Noise_Filter"
