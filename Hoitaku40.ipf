@@ -3316,10 +3316,12 @@ static Function NAF_Element_handler(backup_wd,working_dfr,NAF_DFR,waves_dfr,y_wa
 	cursor /A=1 /W=$(graphStr) A $(nameofwave(y_wave)) Acursor
 	cursor /A=1 /W=$(graphStr) B $(nameofwave(y_wave)) Bcursor
 	setDataFolder current_working_dfr
-	MPF2_SetDataPointRange(graphStr,y_wave,x_wave,Acursor,Bcursor,Acursor)
+	variable local_XPointRangeReversed = 0
+	MPF2_SetDataPointRange(graphStr,y_wave,x_wave,Acursor,Bcursor,local_XPointRangeReversed)
 	Variable/G XPointRangeBegin = Acursor
 	Variable/G XPointRangeEnd = Bcursor
 	Variable/G XPointRangeReversed = 0
+	
 	
 	//SVAR YWvName = $(DFpath+":YWvName")
 	//SVAR XWvName = $(DFpath+":XWvName")
@@ -3837,6 +3839,7 @@ Function NAF_DoFIT_Proc(ctrlName) :ButtonControl
 	Nvar XPointRangeEnd
 	a_index = XPointRangeBegin
 	b_index = XPointRangeEnd
+	
 	Svar GraphName
 	variable BaselineRow = WMHL_GetRowNumberForItem(GraphName+"#MultiPeak2Panel#P1", "MPF2_PeakList", "Baseline")
 	string baselinestr = WMHL_GetExtraColumnData(GraphName+"#MultiPeak2Panel#P1", "MPF2_PeakList", 0, BaselineRow)
