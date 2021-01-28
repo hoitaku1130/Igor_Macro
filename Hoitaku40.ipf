@@ -28,7 +28,7 @@
 	"Graph_Offset_Easily"
 	"Correlation"
 	"autoFit_Panel_(Only_supported_on_Igor6)"
-	"New_AutoFit_Function_(Only_supported_on_Igor6)"
+	"New_AutoFit_Function(Beta)"
 	End
 	
 #endif
@@ -2034,7 +2034,7 @@ Function three_points_negative_peak(wave_name)
 End
 
 
-#if (IgorVersion() < 7) 
+
 
 //-------------------Wrapper of NASU AutoFit Program----------------------
 static Function /DF GetautoFitFolder()
@@ -3068,6 +3068,7 @@ End
  
  // main procedure
  
+ #if (IgorVersion() < 7) 
 static Function HO_MPF2_DoFitButtonProc(setNumber,windowname)
 	variable setNumber
 	string windowname
@@ -3284,6 +3285,228 @@ static Function HO_MPF2_DoFitButtonProc(setNumber,windowname)
 	
 	SetDataFolder saveDF		
 End
+#else
+Function New_AutoFit_FunctionBeta()
+	New_AutoFit_Function()
+End
+
+static Function HO_MPF2_DoFitButtonProc(setNumber,windowname)
+	variable setNumber
+	string windowname
+	
+	STRUCT MPFitInfoStruct MPStruct
+	String DFpath = MPF2_FolderPathFromSetNumber(setNumber)
+	
+	Wave/Z wpi = $(DFPath+":"+"W_AutoPeakInfo")
+	if (!WaveExists(wpi))
+		DoAlert 0, "There are no peaks to fit."
+		return -1
+	endif
+	MPStruct.NPeaks = DimSize(wpi, 0)
+	SVAR YWvName = $(DFpath+":YWvName")
+	SVAR XWvName = $(DFpath+":XWvName")
+	Wave MPStruct.yWave = $YWvName
+	Wave/Z MPStruct.xWave = $XWvName
+	SVAR gname = $(DFpath+":GraphName")
+	String listPanelName = gname+"#MultiPeak2Panel#P1"
+	
+	Wave/Z MPStruct.weightWave = $PopupWS_GetSelectionFullPath( gname+"#MultiPeak2Panel#P3", "MPF2_SelectWeightWave")
+	Wave/Z MPStruct.maskWave = $PopupWS_GetSelectionFullPath( gname+"#MultiPeak2Panel#P3", "MPF2_SelectMaskWave")
+
+	String saveDF = GetDataFolder(1)
+	SetDataFolder DFPath
+
+	//// do a check on the Use Graph Cursors checkbox to determine xPointRangeBegin&End
+	String multiPeakPanelName = gname+"#MultiPeak2Panel"
+	if (1)			// use cursors
+		NVAR XPointRangeBegin
+		NVAR XPointRangeEnd	
+		MPStruct.XPointRangeBegin = XPointRangeBegin
+		MPStruct.XPointRangeEnd = XPointRangeEnd
+	else					// don't use cursors - use visible graph range size
+		Variable RangeBegin, RangeEnd, RangeReversed
+		MPF2_SetDataPointRange(gname, MPStruct.yWave, MPStruct.xWave, RangeBegin, RangeEnd, RangeReversed)
+		MPStruct.XPointRangeBegin = RangeBegin
+		MPStruct.XPointRangeEnd = RangeEnd
+	endif
+
+	NVAR MPF2_FitCurvePoints
+	MPStruct.FitCurvePoints = MPF2_FitCurvePoints
+
+	String/G FuncListString=""
+	
+	Variable nBLParams
+	String ParamNameList
+	String pwname
+	Variable i
+	
+	String OneHoldString = ""
+	Wave/T HoldStrings
+	
+	Variable BaselineRow = WMHL_GetRowNumberForItem(listPanelName, "MPF2_PeakList", "Baseline")
+	String baselineStr = WMHL_GetExtraColumnData(listPanelName, "MPF2_PeakList", 0, BaselineRow)
+	MPStruct.ListOfFunctions = MPF2_PeakOrBLTypeFromListString(baselineStr)+";"
+	//MPStruct.ListOfFunctions = MPF2_PeakOrBLTypeFromListString("Linear\JR\W523")+";"
+	Variable doBaseLine = CmpStr(baselineStr, "None"+MENU_ARROW_STRING) != 0
+	MPStruct.ListOfCWaveNames = "Baseline Coefs;"		// if baseline type is "None", this wave probably doesn't exist, but it doesn't matter because it will be ignored
+	if (doBaseLine)
+		MPStruct.ListOfHoldStrings = MPF2_HoldStringForPeakListItem("Baseline", DFpath, listPanelName)+";"
+	else
+		MPStruct.ListOfHoldStrings = ";"
+	endif
+	
+	for (i = 0; i < MPStruct.NPeaks; i += 1)
+		MPStruct.ListOfCWaveNames += "Peak "+num2istr(i)+" Coefs;"
+		String peakItem = "Peak "+num2istr(i)
+		Variable theRow = WMHL_GetRowNumberForItem(listPanelName, "MPF2_PeakList", peakItem)
+		String PeakTypeName = MPF2_PeakOrBLTypeFromListString( WMHL_GetExtraColumnData(listPanelName, "MPF2_PeakList", 0, theRow) )
+		MPStruct.ListOfFunctions += PeakTypeName+";"
+		MPStruct.ListOfHoldStrings += MPF2_HoldStringForPeakListItem(peakItem, DFpath, listPanelName)+";"
+	endfor
+//print "Function list = ["+FuncListString+"]"
+//print "Function list has ", strlen(FuncListString), "characters"
+
+	//// Check inter-peak constraints ////
+	NVAR/Z MPF2ConstraintsShowing = $(DFPath+":MPF2ConstraintsShowing")
+	if (!NVAR_Exists(MPF2ConstraintsShowing))
+		Variable/G $(DFPath+":MPF2ConstraintsShowing")
+		NVAR MPF2ConstraintsShowing = $(DFPath+":MPF2ConstraintsShowing")
+		MPF2ConstraintsShowing = 0
+	endif
+	if (MPF2ConstraintsShowing)	
+		SVAR /Z interPeakString = $(DFPath+":interPeakConstraints")
+		if (!SVAR_exists(interPeakString))
+			String /G $(DFPath+":interPeakConstraints")
+			SVAR interPeakString = $(DFPath+":interPeakConstraints")
+		endif
+
+		String notebookName = StringFromList(0,windowname,"#")+"#"+StringFromList(1,windowname,"#")+"#P3#MPF2_InterPeakConstraints"
+		Notebook $notebookName, selection={startOfFile, endOfFile}
+		GetSelection notebook, $notebookName, 2
+		interPeakString = S_Selection[0, strlen(S_Selection)-1]
+		interPeakString = ReplaceString("\n", interPeakString, "")
+		interPeakString = ReplaceString("\r", interPeakString, "")
+		Notebook $notebookName, visible=0
+		Notebook $notebookName, visible=1
+			
+		Variable isValid = MPF2_ValidateConstraint(setNumber, windowname, interPeakString)
+		if (!isValid)
+			return -1
+		endif
+
+		//Wave /T MPStruct.constraints = getGlobalConstraintsWave(setNumber)
+
+		Duplicate /O MPStruct.constraints, $(DFPath+":MPF2_ConstraintsBackup")
+	else	
+		KillWaves /Z $(DFPath+":MPF2_ConstraintsBackup")
+	endif
+
+	// Added to have a FuncFit ready constraints wave ready.  
+
+	MPStruct.fitOptions = 4
+	
+	MPF2_SaveFunctionTypes(gname+"#MultiPeak2Panel")
+	
+//Variable etime = ticks	
+	MPF2_DoMPFit(MPStruct, DFPath+":")
+//etime = ticks-etime
+//print "Time for fit: ", etime/60," seconds"	
+	FuncListString = MPStruct.FuncListString
+
+	String alertMsg
+//	if (MPStruct.fitError || ((MPStruct.fitQuitReason > 0) && (MPStruct.fitQuitReason < 3)) )
+//		Variable doRestore = 1
+//		if (MPStruct.fitQuitReason == 2)
+//			alertMsg = "Multi-peak Fit cancelled."
+//		else
+//			alertMsg = "Multi-peak  fit failed:"
+//		endif
+//		if (MPStruct.fitError & 2)
+//			alertMsg += "\rSingular matrix error."
+//		endif
+//		if (MPStruct.fitError & 4)
+//			alertMsg += "\rOut of memory."
+//		endif
+//		if (MPStruct.fitError & 8)
+//			alertMsg += "\rFunction return NaN or INF."
+//		endif
+//		if (MPStruct.fitQuitReason == 1)
+//			alertMsg += "\rNumber of iterations exceded the limit."
+//			doRestore = 0		// allow the fit to continue from where it left off if Do Fit is clicked again
+//		endif
+//		if (doRestore)
+//			MPF2_RestoreCoefWavesFromBackup(MPStruct.ListOfCWaveNames, DFPath)
+//		endif
+//		DoAlert 0, alertMsg
+	Variable doRestore = 0
+	if (MPStruct.fitError || MPstruct.fitQuitReason)
+		doRestore = 1
+		if (MPStruct.fitError)
+			DoAlert 0, "Multi-peak Fit failed: \r\r"+MPstruct.fitErrorMsg
+		else
+			switch (MPstruct.fitQuitReason)
+				case 1:
+					DoAlert 0, "Multi-peak fit exceded the iteration limit. Click Fit again to continue."
+					doRestore = 0
+					break;
+				case 2:
+					DoAlert 0, "Multi-peak fit cancelled."
+					break;
+				case 3:
+					DoAlert 0, "Multi-peak fit not progressing. Chances are the fit is good."
+					doRestore = 0
+					break;
+			endswitch
+		endif	
+		if (doRestore)
+			MPF2_RestoreCoefWavesFromBackup(MPStruct.ListOfCWaveNames, DFPath)
+		endif
+	endif
+	if (doRestore == 0)
+		Variable/G MPF2_FitDate = MPStruct.dateTimeOfFit
+		Variable/G MPF2_FitPoints = MPStruct.fitPnts
+		Variable/G MPF2_FitChiSq = MPStruct.chisq
+		// Now update the list with the fit results
+		if (doBaseLine)
+			if (WMHL_RowIsOpen(listPanelName, "MPF2_PeakList", BaselineRow))
+				Wave 'Baseline Coefs'
+				String baselineRows = WMHL_ListChildRows(listPanelName, "MPF2_PeakList", BaselineRow)
+				Variable numBLRows = ItemsInList(baseLineRows)
+				for (i = 0; i < numBLRows; i += 1)
+					Variable BLcoefRow = str2num(stringFromList(i, baselineRows))
+					WMHL_ExtraColumnData(listPanelName, "MPF2_PeakList", 0, BLcoefRow, num2str('Baseline Coefs'[i]), 1)
+				endfor
+			endif
+		endif
+
+		for (i = 0; i < MPStruct.NPeaks; i += 1)
+			Variable PeakRow = WMHL_GetRowNumberForItem(listPanelName, "MPF2_PeakList", "Peak "+num2istr(i))
+			if (WMHL_RowIsOpen(listPanelName, "MPF2_PeakList", PeakRow))
+				Wave coefs = $("Peak "+num2istr(i)+" Coefs")
+				String coefRows = WMHL_ListChildRows(listPanelName, "MPF2_PeakList", PeakRow)
+				Variable numCoefRows = ItemsInList(coefRows)
+				Variable j
+				for (j = 0; j < numCoefRows; j += 1)
+					Variable peakCoefRow = str2num(stringFromList(j, coefRows))
+					WMHL_ExtraColumnData(listPanelName, "MPF2_PeakList", 0, peakCoefRow, num2str(coefs[j]), 1)
+				endfor
+			endif
+//			Make/N=5/O tempAutoPickInfo
+//			MPF2_GetSimulatedAutoPickData(PeakRow, listPanelName, tempAutoPickInfo)
+//			wpi[i][] = tempAutoPickInfo[q]
+		endfor
+		
+		MPF2_RefreshPeakResults(setNumber)
+	endif
+
+	NVAR negativePeaks = negativePeaks
+	NVAR displayPeaksFullWidth = $(DFpath+":displayPeaksFullWidth")
+	MPF2_AddPeaksToGraph(setNumber, wpi, 1, 1, displayPeaksFullWidth)
+	MPF2_AddFitCurveToGraph(setNumber, wpi, MPStruct.yWave, MPStruct.xWave, 1, overridePoints=MPF2_getFitCurvePoints(gname+"#MultiPeak2Panel"))
+	
+	SetDataFolder saveDF		
+End
+#endif
 
 
 //‚±‚ÌŠÖ”‚Åˆê‚Âˆê‚ÂFitting Operation
@@ -3872,7 +4095,7 @@ Function NAF_DoFIT_Proc(ctrlName) :ButtonControl
 	setdataFolder backup_saved_DFR
 End
 
-#endif
+
 
 //what is MPF2_SaveFunctionTypes ?
 
